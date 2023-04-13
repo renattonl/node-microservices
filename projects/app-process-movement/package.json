@@ -1,0 +1,18 @@
+{
+  "name": "app-process-movement",
+  "version": "1.0.0",
+  "description": "",
+  "main": "app.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "RenattoNL<renattonl@gmail.com>",
+  "license": "ISC",
+  "dependencies": {
+    "dotenv": "^16.0.3",
+    "kafkajs": "^2.2.4",
+    "mongodb": "^5.2.0",
+    "nacos": "^2.5.1"
+  }
+}

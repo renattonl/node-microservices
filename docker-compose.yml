@@ -1,0 +1,281 @@
+version: '3.1'
+services:
+
+  db-movement:
+    image: mongo:6
+    container_name: db-movement-mongo
+    restart: always
+    ports:
+      - 4000:27017
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: user
+      MONGO_INITDB_ROOT_PASSWORD: pass
+    volumes:
+      - db-movement:/data/db
+    networks:
+      - net-micro-services
+
+  db-security:
+    image: postgres:15
+    container_name: db-security-postgres
+    restart: unless-stopped
+    tty: true
+    ports:
+      - 4001:5432
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: "pass"
+      POSTGRES_DB: db
+      POSTGRES_HOST_AUTH_METHOD: md5
+    volumes:
+      - db-security:/var/lib/postgresql/data
+      - ./databases/security/:/docker-entrypoint-initdb.d
+    networks:
+      - net-micro-services
+
+  db-account:
+    image: postgres:15
+    container_name: db-account-postgres
+    restart: unless-stopped
+    tty: true
+    ports:
+      - 4002:5432
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: "pass"
+      POSTGRES_DB: db
+      POSTGRES_HOST_AUTH_METHOD: md5
+    volumes:
+      - db-account:/var/lib/postgresql/data
+      - ./databases/account/:/docker-entrypoint-initdb.d
+    networks:
+      - net-micro-services
+
+  db-transaction:
+    image: mysql:8
+    container_name: db-transaction-mysql
+    restart: unless-stopped
+    tty: true
+    ports:
+      - 4003:3306
+    environment:
+      MYSQL_USER: user
+      MYSQL_PASSWORD: "pass"
+      MYSQL_DATABASE: db
+      MYSQL_ROOT_PASSWORD: "AJsCmT1nIb0"
+    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci --skip-character-set-client-handshake
+    volumes:
+      - db-transaction:/var/lib/mysql
+      - ./databases/transaction/:/docker-entrypoint-initdb.d
+    networks:
+      - net-micro-services
+
+  db-nacos:
+    image: mysql:5.7
+    container_name: db-nacos-mysql
+    restart: unless-stopped
+    tty: true
+    ports:
+      - 4004:3306
+    environment:
+      MYSQL_USER: user
+      MYSQL_PASSWORD: "pass"
+      MYSQL_DATABASE: db
+      MYSQL_ROOT_PASSWORD: "AJsCmT1nIb0"
+    volumes:
+      - ./databases/nacos/:/docker-entrypoint-initdb.d
+      - db-nacos:/var/lib/mysql
+    healthcheck:
+      test: [ "CMD", "mysqladmin" ,"ping", "-h", "localhost" ]
+      interval: 5s
+      timeout: 10s
+      retries: 10
+    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci --skip-character-set-client-handshake
+    networks:
+      - net-micro-services
+
+  db-redis:
+    image: redis:7.0
+    container_name: db-redis
+    restart: unless-stopped
+    tty: true
+    ports:
+      - 4005:6379
+    volumes:
+      - db-redis:/data
+    networks:
+      - net-micro-services
+
+
+  service-nacos:
+    image: nacos/nacos-server:v2.0.3
+    container_name: service-nacos
+    tty: true
+    restart: always
+    environment:
+      MODE: standalone
+      SPRING_DATASOURCE_PLATFORM: mysql
+      MYSQL_SERVICE_HOST: db-nacos
+      MYSQL_SERVICE_PORT: 3306
+      MYSQL_SERVICE_DB_NAME: db
+      MYSQL_SERVICE_USER: user
+      MYSQL_SERVICE_PASSWORD: pass
+      NACOS_DEBUG: y
+      TOMCAT_ACCESSLOG_ENABLED: true
+    volumes:
+      - ./nacos/logs/:/home/nacos/logs
+    depends_on:
+      db-nacos:
+        condition: service_healthy
+      db-transaction:
+        condition: service_started
+      db-account:
+        condition: service_started
+      db-security:
+        condition: service_started
+      db-movement:
+        condition: service_started
+      service-kafka:
+        condition: service_started
+    ports:
+      - 8848:8848
+    networks:
+      - net-micro-services
+
+  service-account:
+    build: ./projects/app-account/
+    image: service-account
+    container_name: service-account
+    tty: true
+    restart: always
+    depends_on:
+      - service-nacos
+    ports:
+      - 5002:80
+    networks:
+      - net-micro-services
+
+  service-deposit:
+    build: ./projects/app-deposit/
+    image: service-deposit
+    container_name: service-deposit
+    tty: true
+    restart: always
+    depends_on:
+      - service-nacos
+    ports:
+      - 5003:80
+    networks:
+      - net-micro-services
+
+  service-movement:
+    build: ./projects/app-movement/
+    image: service-movement
+    container_name: service-movement
+    tty: true
+    restart: always
+    depends_on:
+      - service-nacos
+    ports:
+      - 5005:80
+    networks:
+      - net-micro-services
+  
+  service-process-account:
+    build: ./projects/app-process-account/
+    image: service-process-account
+    container_name: service-process-account
+    tty: true
+    restart: always
+    depends_on:
+      - service-nacos
+    networks:
+      - net-micro-services
+
+  service-process-movement:
+    build: ./projects/app-process-movement/
+    image: service-process-movement
+    container_name: service-process-movement
+    tty: true
+    restart: always
+    depends_on:
+      - service-nacos
+    networks:
+      - net-micro-services
+
+  service-security:
+    build: ./projects/app-security/
+    image: service-security
+    container_name: service-security
+    tty: true
+    restart: always
+    depends_on:
+      - service-nacos
+    ports:
+      - 5001:80
+    networks:
+      - net-micro-services
+
+  service-withdrawal:
+    build: ./projects/app-withdrawal/
+    image: service-withdrawal
+    container_name: service-withdrawal
+    tty: true
+    restart: always
+    depends_on:
+      - service-nacos
+    ports:
+      - 5004:80
+    networks:
+      - net-micro-services
+
+  service-envoy:
+    image: envoyproxy/envoy:v1.17.0
+    container_name: service-envoy
+    tty: true
+    restart: always
+    volumes:
+      - ./gateway/envoy.yaml:/etc/envoy/envoy.yaml
+    depends_on:
+      - service-nacos
+    ports:
+      - 10000:10000
+      - 9901:9901
+    networks:
+      - net-micro-services
+
+  service-kafka:
+    image: johnnypark/kafka-zookeeper:2.6.0
+    container_name: service-kafka
+    tty: true
+    restart: always
+    environment:
+      ADVERTISED_HOST: service-kafka
+      NUM_PARTITIONS: 3
+    # volumes:
+    #   - ./kafka/server.properties:/opt/kafka_2.13-2.6.0/config/server.properties
+    ports:
+      - 2181:2181
+      - 9092:9092
+    networks:
+      - net-micro-services
+
+
+
+volumes:
+  db-movement:
+    driver: local
+  db-security:
+    driver: local
+  db-account:
+    driver: local
+  db-transaction:
+    driver: local
+  db-nacos:
+    driver: local
+  db-redis:
+    driver: local
+
+networks:
+  net-micro-services:
+    driver: bridge
